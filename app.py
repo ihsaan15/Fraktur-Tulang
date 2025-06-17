@@ -85,7 +85,7 @@ st.set_page_config(page_title="Deteksi Fraktur Tulang", layout="wide")
 st.title("Deteksi Fraktur pada Tibia dan Fibula menggunakan Citra X-ray")
 st.markdown("""
 Aplikasi ini menggunakan Image Processing dan model Machine Learning untuk mendeteksi kemungkinan fraktur
-berdasarkan citra X-ray tulang kaki bagian bawah (tibia dan fibula).
+berdasarkan citra X-ray tulang tangan dan kaki bagian bawah (tibia dan fibula).
 """)
 
 # --- Unggah Gambar ---
