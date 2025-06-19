@@ -1,6 +1,3 @@
-# =================================================================
-# IMPOR LIBRARY
-# =================================================================
 import streamlit as st
 import cv2
 import numpy as np
@@ -9,22 +6,51 @@ from skimage.feature import graycomatrix, graycoprops
 import os
 
 # =================================================================
-# FUNGSI EKSTRAKSI FITUR (Sama seperti di Colab)
+# BAGIAN 1: MUAT MODEL DAN SCALER
 # =================================================================
-def process_and_extract_features_lanjutan(image):
+# Pastikan file 'model_fraktur_terbaik.pkl' dan 'scaler.pkl' berada di direktori yang sama
+# dengan file app.py ini, atau berikan path lengkapnya.
+
+try:
+    model = joblib.load('model_fraktur_terbaik.pkl')
+    scaler = joblib.load('scaler.pkl')
+    st.sidebar.success("Model dan Scaler berhasil dimuat!")
+except FileNotFoundError:
+    st.sidebar.error("Error: File model atau scaler tidak ditemukan.")
+    st.sidebar.info("Pastikan 'model_fraktur_terbaik.pkl' dan 'scaler.pkl' ada di direktori ini.")
+    model = None
+    scaler = None
+
+# =================================================================
+# BAGIAN 2: FUNGSI EKSTRAKSI FITUR (SESUAI DENGAN NOTEBOOK)
+# =================================================================
+
+def process_and_extract_features(image, target_size=(224, 224)):
+    """
+    Memproses citra dan mengekstrak fitur GLCM dan Hu Moments.
+    """
     # Konversi ke grayscale jika gambar berwarna
     if len(image.shape) == 3:
         img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
-        img_gray = image # Jika sudah grayscale
+        img_gray = image # Gambar sudah grayscale
+
+    # --- LANGKAH PENTING: IMAGE RESIZING ---
+    img_resized = cv2.resize(img_gray, target_size, interpolation=cv2.INTER_AREA)
 
     # Pipeline Pemrosesan Citra
-    img_denoised = cv2.medianBlur(img_gray, 5)
+    img_denoised = cv2.medianBlur(img_resized, 3)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     img_clahe = clahe.apply(img_denoised)
 
     # --- Ekstraksi Fitur Tekstur dari gambar CLAHE (GLCM) ---
-    glcm = graycomatrix(img_clahe, distances=[5], angles=[0], levels=256, symmetric=True, normed=True)
+    # Perhatikan penanganan jika gambar terlalu kecil
+    if img_clahe.shape[0] < 5 or img_clahe.shape[1] < 5:
+         st.warning("Gambar terlalu kecil untuk GLCM dengan distance=5. Menggunakan distance=1.")
+         glcm = graycomatrix(img_clahe, distances=[1], angles=[0], levels=256, symmetric=True, normed=True)
+    else:
+         glcm = graycomatrix(img_clahe, distances=[5], angles=[0], levels=256, symmetric=True, normed=True)
+
 
     contrast = graycoprops(glcm, 'contrast')[0, 0]
     dissimilarity = graycoprops(glcm, 'dissimilarity')[0, 0]
@@ -33,122 +59,100 @@ def process_and_extract_features_lanjutan(image):
     correlation = graycoprops(glcm, 'correlation')[0, 0]
 
     # --- Ekstraksi Fitur Bentuk dari Tepi Canny ---
-    # Pastikan gambar input Canny adalah 8-bit grayscale
-    img_clahe_8bit = cv2.convertScaleAbs(img_clahe)
-    img_edges = cv2.Canny(img_clahe_8bit, 100, 200) # Gunakan 8-bit image
-
+    img_edges = cv2.Canny(img_clahe, 50, 150)
     contours, _ = cv2.findContours(img_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
     jumlah_kontur = len(contours)
 
     # Hitung Hu Moments dari kontur terbesar
     hu_moments = np.zeros(7)
     if jumlah_kontur > 0:
         main_contour = max(contours, key=cv2.contourArea)
-        moments = cv2.moments(main_contour)
-        # Mencegah error jika momen bernilai 0
-        if moments['mu02'] != 0 and moments['mu20'] != 0:
-            hu_moments = cv2.HuMoments(moments).flatten()
+        # Periksa apakah kontur memiliki setidaknya 5 titik untuk menghindari error moments
+        if len(main_contour) >= 5:
+             moments = cv2.moments(main_contour)
+             # Pastikan momen tidak nol sebelum menghitung Hu Moments
+             if moments['m00'] != 0:
+                hu_moments = cv2.HuMoments(moments).flatten()
+             else:
+                 st.warning("Tidak dapat menghitung Hu Moments untuk kontur ini (m00 is zero).")
         else:
-             hu_moments = np.zeros(7) # Set ke nol jika momen tidak valid
+            st.warning(f"Kontur terbesar terlalu kecil ({len(main_contour)} titik) untuk menghitung Hu Moments.")
 
 
-    return {
-        'contrast': contrast, 'dissimilarity': dissimilarity, 'homogeneity': homogeneity,
-        'energy': energy, 'correlation': correlation, 'hu_moment_1': hu_moments[0],
-        'hu_moment_2': hu_moments[1], 'hu_moment_3': hu_moments[2], 'jumlah_kontur': jumlah_kontur
-    }
+    # Urutan fitur HARUS sama dengan urutan saat pelatihan
+    vektor_fitur = [
+        contrast, dissimilarity, homogeneity, energy, correlation,
+        hu_moments[0], hu_moments[1], hu_moments[2], jumlah_kontur
+    ]
 
-# =================================================================
-# FUNGSI MUAT MODEL & SCALER
-# =================================================================
-@st.cache_resource # Cache sumber daya agar model tidak dimuat berulang kali
-def load_model_and_scaler():
-    try:
-        model_path = 'models/model_fraktur_terbaik.pkl' # Sesuaikan path
-        scaler_path = 'models/scaler.pkl'              # Sesuaikan path
-        model = joblib.load(model_path)
-        scaler = joblib.load(scaler_path)
-        return model, scaler
-    except FileNotFoundError:
-        st.error(f"Error: File model atau scaler tidak ditemukan. Pastikan 'model_fraktur_terbaik.pkl' dan 'scaler.pkl' ada di folder '{os.path.dirname(model_path)}'.")
-        return None, None
-
-# Muat model saat aplikasi dimulai
-model, scaler = load_model_and_scaler()
+    return np.array(vektor_fitur).reshape(1, -1), img_resized, img_denoised, img_clahe, img_edges
 
 # =================================================================
-# BAGIAN STREAMLIT
+# BAGIAN 3: TAMPILAN STREAMLIT
 # =================================================================
-st.set_page_config(page_title="Deteksi Fraktur Tulang", layout="wide")
 
-st.title("Deteksi Fraktur pada Tibia dan Fibula menggunakan Citra X-ray")
-st.markdown("""
-Aplikasi ini menggunakan Image Processing dan model Machine Learning untuk mendeteksi kemungkinan fraktur
-berdasarkan citra X-ray tulang tangan dan kaki bagian bawah (tibia dan fibula).
-""")
+st.title("Deteksi Fraktur pada Tibia dan Fibula")
+st.write("Upload citra X-ray tulang kaki (tibia/fibula) untuk mendeteksi fraktur.")
 
-# --- Unggah Gambar ---
-st.header("Unggah Citra X-ray")
-uploaded_file = st.file_uploader("Pilih file gambar...", type=["png", "jpg", "jpeg"])
+# Upload file gambar
+uploaded_file = st.file_uploader("Pilih citra X-ray...", type=["png", "jpg", "jpeg", "bmp"])
 
 if uploaded_file is not None:
-    # Baca gambar
+    # Baca gambar menggunakan OpenCV
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-    image = cv2.imdecode(file_bytes, cv2.IMREAD_UNCHANGED) # Baca dengan channel asli
+    img_color = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
-    if image is None:
-        st.error("Gagal membaca file gambar. Pastikan file yang diunggah adalah gambar yang valid.")
-    else:
-        st.image(image, caption="Citra Asli", use_container_width=True)
-
-        st.header("Hasil Analisis")
+    if img_color is not None:
+        st.subheader("Citra yang Diunggah")
+        st.image(img_color, channels="BGR", caption="Citra Asli", use_column_width=True)
 
         if model is not None and scaler is not None:
-            # Proses dan ekstrak fitur
-            st.write("Memproses citra dan mengekstraksi fitur...")
-            features = process_and_extract_features_lanjutan(image)
+            st.subheader("Hasil Deteksi Fraktur")
 
-            if features:
-                st.write("Fitur berhasil diekstraksi.")
-                # st.write(features) # Opsional: tampilkan fitur
+            # Proses gambar dan ekstrak fitur
+            with st.spinner("Memproses citra dan mengekstrak fitur..."):
+                 features, img_resized, img_denoised, img_clahe, img_edges = process_and_extract_features(img_color)
 
-                # Persiapan data untuk prediksi
-                vektor_fitur = [
-                     features['contrast'], features['dissimilarity'], features['homogeneity'],
-                     features['energy'], features['correlation'], features['hu_moment_1'],
-                     features['hu_moment_2'], features['hu_moment_3'], features['jumlah_kontur']
-                ]
-                fitur_array = np.array(vektor_fitur).reshape(1, -1)
+            if features is not None:
+                # Penskalaan fitur menggunakan scaler yang sudah dimuat
+                features_scaled = scaler.transform(features)
 
-                # Skalakan fitur menggunakan scaler yang dimuat
-                fitur_scaled = scaler.transform(fitur_array)
+                # Prediksi menggunakan model
+                prediction = model.predict(features_scaled)
+                probability = model.predict_proba(features_scaled)
 
-                # Lakukan prediksi
-                prediction = model.predict(fitur_scaled)
-                probability = model.predict_proba(fitur_scaled)
-
-                # Tampilkan hasil
+                # Tampilkan hasil prediksi
                 hasil_label = "FRAKTUR" if prediction[0] == 1 else "NORMAL (Tidak Fraktur)"
                 kepercayaan = probability[0][prediction[0]] * 100
 
-                st.subheader("Hasil Prediksi:")
                 if hasil_label == "FRAKTUR":
-                    st.error(f"Status: **{hasil_label}**")
-                    st.error(f"Tingkat Kepercayaan: {kepercayaan:.2f}%")
+                    st.error(f"Hasil Klasifikasi: **{hasil_label}**")
+                    st.write(f"Tingkat Kepercayaan: {kepercayaan:.2f}%")
                 else:
-                    st.success(f"Status: **{hasil_label}**")
-                    st.success(f"Tingkat Kepercayaan: {kepercayaan:.2f}%")
+                    st.success(f"Hasil Klasifikasi: **{hasil_label}**")
+                    st.write(f"Tingkat Kepercayaan: {kepercayaan:.2f}%")
 
-                st.markdown("""
-                <small>*Hasil ini adalah prediksi berdasarkan model machine learning dan
-                tidak menggantikan diagnosis medis profesional.</small>
-                """, unsafe_allow_html=True)
+                # Opsi untuk menampilkan tahapan pemrosesan (opsional)
+                if st.checkbox("Tampilkan Tahapan Pemrosesan Citra"):
+                    st.subheader("Tahapan Pemrosesan Citra")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.image(img_resized, caption="1. Resized Grayscale", use_column_width=True, cmap='gray')
+                    with col2:
+                        st.image(img_denoised, caption="2. Denoised (Median Filter)", use_column_width=True, cmap='gray')
+
+                    col3, col4 = st.columns(2)
+                    with col3:
+                        st.image(img_clahe, caption="3. Kontras (CLAHE)", use_column_width=True, cmap='gray')
+                    with col4:
+                        st.image(img_edges, caption="4. Garis Tepi (Canny)", use_column_width=True, cmap='gray')
+
 
             else:
-                st.error("Gagal mengekstraksi fitur dari citra.")
-        else:
-            st.warning("Model atau scaler belum dimuat. Pastikan file model (.pkl) ada.")
+                 st.error("Gagal mengekstrak fitur dari citra.")
 
-else:
-    st.info("Silakan unggah gambar X-ray untuk memulai deteksi.")
+        else:
+            st.warning("Model atau scaler tidak berhasil dimuat. Prediksi tidak dapat dilakukan.")
+
+    else:
+        st.error("Gagal memuat citra. Pastikan file yang diunggah adalah format gambar yang valid.")
