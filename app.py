@@ -104,7 +104,7 @@ if uploaded_file is not None:
 
     if img_color is not None:
         st.subheader("Citra yang Diunggah")
-        st.image(img_color, channels="BGR", caption="Citra Asli", use_column_width=True)
+        st.image(img_color, channels="BGR", caption="Citra Asli", use_container_width=True)
 
         if model is not None and scaler is not None:
             st.subheader("Hasil Deteksi Fraktur")
