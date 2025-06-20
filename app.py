@@ -25,7 +25,7 @@ except FileNotFoundError:
 # BAGIAN 2: FUNGSI EKSTRAKSI FITUR (SESUAI DENGAN NOTEBOOK)
 # =================================================================
 
-def process_and_extract_features(image, target_size=(224, 224)):
+def process_and_extract_features(image, target_size=(200, 200)):
     """
     Memproses citra dan mengekstrak fitur GLCM dan Hu Moments.
     """
