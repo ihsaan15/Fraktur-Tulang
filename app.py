@@ -12,8 +12,8 @@ import os
 # dengan file app.py ini, atau berikan path lengkapnya.
 
 try:
-    model = joblib.load('model_fraktur_terbaik.pkl')
-    scaler = joblib.load('scaler.pkl')
+    model = joblib.load('./models/model_fraktur_terbaik.pkl')
+    scaler = joblib.load('./models/scaler.pkl')
     st.sidebar.success("Model dan Scaler berhasil dimuat!")
 except FileNotFoundError:
     st.sidebar.error("Error: File model atau scaler tidak ditemukan.")
