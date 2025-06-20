@@ -59,7 +59,7 @@ def process_and_extract_features(image, target_size=(224, 224)):
     correlation = graycoprops(glcm, 'correlation')[0, 0]
 
     # --- Ekstraksi Fitur Bentuk dari Tepi Canny ---
-    img_edges = cv2.Canny(img_clahe, 50, 150)
+    img_edges = cv2.Canny(img_clahe, 50, 250)
     contours, _ = cv2.findContours(img_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     jumlah_kontur = len(contours)
 
