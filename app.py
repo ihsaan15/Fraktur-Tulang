@@ -137,15 +137,15 @@ if uploaded_file is not None:
                     st.subheader("Tahapan Pemrosesan Citra")
                     col1, col2 = st.columns(2)
                     with col1:
-                        st.image(img_resized, caption="1. Resized Grayscale", use_column_width=True, cmap='gray')
+                        st.image(img_resized, caption="1. Resized Grayscale", use_container_width=True)
                     with col2:
-                        st.image(img_denoised, caption="2. Denoised (Median Filter)", use_column_width=True, cmap='gray')
+                        st.image(img_denoised, caption="2. Denoised (Median Filter)", use_container_width=True)
 
                     col3, col4 = st.columns(2)
                     with col3:
-                        st.image(img_clahe, caption="3. Kontras (CLAHE)", use_column_width=True, cmap='gray')
+                        st.image(img_clahe, caption="3. Kontras (CLAHE)", use_container_width=True)
                     with col4:
-                        st.image(img_edges, caption="4. Garis Tepi (Canny)", use_column_width=True, cmap='gray')
+                        st.image(img_edges, caption="4. Garis Tepi (Canny)", use_container_width=True)
 
 
             else:
